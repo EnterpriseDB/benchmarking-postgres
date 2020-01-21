@@ -1,0 +1,32 @@
+#!/bin/bash
+
+if [ "$EUID" -ne 0 ]
+	then echo "Please use sudo or run as root"
+	exit
+fi
+
+yum install https://dl.fedoraproject.org/pub/epel/epel-release-latest-7.noarch.rpm -y
+rpm -ivh pgdg-redhat-repo-latest.noarch.rpm
+#
+## update the cache
+yum makecache
+#
+## install postgresql server 12.
+yum install postgresql12-server -y
+yum install postgresql12-contrib -y
+
+# install postgresql server 11.
+yum install postgresql11-server -y
+yum install postgresql11-contrib -y
+
+# install postgresql server 10.
+yum install postgresql10-server -y
+yum install postgresql10-contrib -y
+
+# install postgresql server 11.
+yum install postgresql96-server -y
+yum install postgresql96-contrib -y
+
+# install postgresql server 11.
+yum install postgresql95-server -y
+yum install postgresql95-contrib -y

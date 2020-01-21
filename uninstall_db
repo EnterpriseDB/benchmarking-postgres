@@ -1,0 +1,4 @@
+#!/bin/bash
+
+# remove the database server
+yum remove postgresql12-server -y

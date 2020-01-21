@@ -1,0 +1,141 @@
+#!/bin/bash
+
+current_dir=$(pwd)
+datadir=$current_dir/data
+bck_datadir=/data/ssd2/centos/data.bck
+wal_dir=/data/ssd2/centos/
+log_dir=$current_dir/Logs
+resultfile_prefix=$current_dir/Results/hammerdb
+
+# hammerdb specific parameters
+hdb_no_of_readings=3
+hdb_pg_count_ware=500
+hdb_pg_num_vu=50
+hdb_pg_rampup=2
+hdb_pg_duration=25
+hdb_pg_vacuum=true
+
+export LD_LIBRARY_PATH=$PGINST/lib/
+export PATH=$PATH:$PGINST/bin
+
+echo -n "initializing data and log directories.... "
+rm -rf $resultfile_prefix.tmp
+rm -rf $wal_dir/pg_wal
+initdb -D $datadir
+echo "done"
+
+version=$(pg_config --version | tr -dc '0-9')
+echo "running HammerDB test for pg_version "$version
+if [ $version -lt 96 ]
+then
+	wal_folder_name=pg_xlog
+else
+	wal_folder_name=pg_wal
+fi
+
+log_dir+=/log_$version
+rm -rf $log_dir
+mkdir $log_dir
+
+cat <<END >> $resultfile_prefix.tmp
+** HammerDB Test Results **
+
+PGOPTIONS:
+$PG_OPTIONS
+
+HDB_OPTIONS:
+pg_count_ware: $hdb_pg_count_ware
+pg_num_vu: $hdb_pg_num_vu
+pg_rampup: $hdb_pg_rampup
+pg_duration: $hdb_pg_duration
+pg_vacuum: $hdb_pg_vacuum
+
+END
+
+echo "$PG_OPTIONS" >> $datadir/postgresql.conf
+
+# start server for loading data
+pg_ctl -D $datadir -l $log_dir/load_logfile start -w
+
+echo -n "loading data.... "
+createuser postgres -s
+cd $HDBINST
+./hammerdbcli <<! 2>&1 | stdbuf -oL -eL sed -e "s,\x1B\[[0-9;]*[a-zA-Z],,g" -e "s,\r,,g" -e "s,hammerdb>,,g" -e "s,after\#[0-9]*,,g" >> $log_dir/pgschemabuild.output
+set argv [list $hdb_pg_count_ware $hdb_pg_num_vu]
+set argc 2
+source ${current_dir}/pgschemabuild.tcl
+!
+cd ${current_dir}
+
+if grep -q 'Error*' $log_dir/pgschemabuild.output; then
+	echo "failed"
+else
+	echo "done"
+fi
+
+# alter column to increase precision for long running test. But, to improve performance, change the precision during creation time.
+# alter table warehouse alter column w_ytd type numeric (16,2);
+# stop server
+psql -c "CHECKPOINT;" postgres
+pg_ctl -D $datadir -l $log_dir/load_logfile stop -w
+sleep 300
+
+# create a backup of the data so that we don't need create the data for
+# every run.
+echo -n "creating data backup.... "
+rm -rf $bck_datadir
+mv $datadir $bck_datadir
+echo "done"
+
+for ((run = 1 ; run <= $hdb_no_of_readings ; run++))
+do
+
+	# copy data from backup
+	echo "test run..... [${run}/${hdb_no_of_readings}]"
+	echo -n "copying data directory for test.... "
+	cp -r $bck_datadir $datadir
+	mv $datadir/$wal_folder_name $wal_dir/$wal_folder_name
+	ln -s $wal_dir/$wal_folder_name $datadir/$wal_folder_name
+	echo "done"
+
+	# start server for test
+	pg_ctl -D $datadir -l $log_dir/hammerdb_${run}_logfile start -w
+
+	echo -n "running test.... "
+cd $HDBINST
+./hammerdbcli <<! 2>&1 | stdbuf -oL -eL sed -e "s,\x1B\[[0-9;]*[a-zA-Z],,g" -e "s,\r,,g" -e "s,hammerdb>,,g" -e "s,after\#[0-9]*,,g" >> $log_dir/pgrun_${run}.output
+set argv [list $hdb_pg_rampup $hdb_pg_duration $hdb_pg_vacuum]
+set argc 3
+source ${current_dir}/pgrun.tcl
+!
+cd ${current_dir}
+
+	if grep -q 'Error*' $log_dir/pgrun_${run}.output; then
+		echo "failed"
+	else
+	    echo "done"
+	fi
+
+	# stop server
+	pg_ctl -D $datadir -l $log_dir/hammerdb_${run}_logfile stop -w
+
+	echo "Run " ${run} "Start.." >> $resultfile_prefix.tmp
+	grep 'System achieved' $log_dir/pgrun_${run}.output >> $resultfile_prefix.tmp
+
+	#cleanup test dir
+	echo -n "removing data directory.... "
+	rm -rf $datadir
+	rm -rf $wal_dir/pg_wal
+	echo "done"
+done
+
+# cleanup backup dir
+echo -n "cleaning up backup data.... "
+rm -rf $bck_datadir
+echo "done"
+
+# save results
+echo -n "saving results.... "
+current_time=$(date "+%Y.%m.%d-%H.%M.%S")
+echo "done"
+mv $resultfile_prefix.tmp ${resultfile_prefix}_${version}.$current_time

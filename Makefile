@@ -1,0 +1,9 @@
+TOPTARGETS := clean
+
+SUBDIRS := HammerDB PGBench
+
+$(TOPTARGETS): $(SUBDIRS)
+$(SUBDIRS):
+			$(MAKE) -C $@ $(MAKECMDGOALS)
+
+.PHONY: $(TOPTARGETS) $(SUBDIRS)

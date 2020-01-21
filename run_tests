@@ -1,0 +1,52 @@
+#!/bin/bash
+
+#set postgres and hammerdb paths
+export PGINST=/usr/pgsql-9.6/
+export HDBINST=/mnt/data-ssd2/kuntal.ghosh/HammerDB-3.2/
+
+# Template to run hammaer db tests
+
+# You can add postgresql parameters here
+read -r -d '' VAR << EOM
+# Add postgresql parameters here
+shared_buffers = 100GB
+max_connections = 200
+min_wal_size = 20GB
+max_wal_size = 100GB
+checkpoint_timeout = 900
+maintenance_work_mem = 1GB
+checkpoint_completion_target = 0.9
+effective_io_concurrency = 200
+wal_buffers = 64MB
+synchronous_commit = on
+log_checkpoints = on
+wal_compression = on
+EOM
+export PG_OPTIONS=$VAR
+cd HammerDB
+#./run_hammerdb
+cd ..
+
+# Template to run pgbench tests
+
+# You can add postgresql parameters here
+read -r -d '' VAR << EOM
+# Add postgresql parameters here
+shared_buffers = 100GB
+max_connections = 1000
+min_wal_size = 20GB
+max_wal_size = 100GB
+checkpoint_timeout = 900
+maintenance_work_mem = 1GB
+checkpoint_completion_target = 0.9
+effective_io_concurrency = 200
+synchronous_commit = on
+log_checkpoints = on
+wal_compression = on
+EOM
+export PG_OPTIONS=$VAR
+cd PGBench
+./run_pgbench
+cd ..
+
+#Add more tests here

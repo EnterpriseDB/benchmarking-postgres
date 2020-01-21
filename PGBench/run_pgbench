@@ -1,0 +1,150 @@
+#!/bin/bash
+
+PGINSTBIN=$PGINST/bin
+
+current_dir=$(pwd)
+datadir=$current_dir/data
+bck_datadir=$current_dir/data.bck
+wal_dir=/mnt/data-ssd/kuntal.ghosh/
+log_dir=$current_dir/Logs
+resultfile_prefix=$current_dir/Results/pgbench
+
+# pgbench specific parameters
+pgbench_no_of_readings=3
+pgbench_sf=10000
+pgbench_num_clients="128 1 256 512 16 64 32"
+pgbench_duration=1800
+
+export LD_LIBRARY_PATH=$PGINST/lib/
+export PATH=$PATH:$PGINST/bin
+
+echo -n "initializing data and log directories.... "
+rm -rf $resultfile_prefix.tmp
+rm -rf $wal_dir/pg_wal
+rm -rf $wal_dir/pg_xlog
+initdb -D $datadir
+echo "done"
+
+version=$(pg_config --version | tr -dc '0-9')
+echo "running PGBench test for pg_version "$version
+if [ $version -eq 9520 ] || [ $version -eq 9616 ]
+then
+	wal_folder_name=pg_xlog
+else
+	wal_folder_name=pg_wal
+fi
+
+log_dir+=/log_$version
+rm -rf $log_dir
+mkdir $log_dir
+
+cat <<END >> $resultfile_prefix.tmp
+** PGBench Test Results **
+
+VERSION:
+$(pg_config --version)
+
+PGOPTIONS:
+$PG_OPTIONS
+
+HDB_OPTIONS:
+scale factor: $pgbench_sf
+clients: $pgbench_num_clients
+duration: $pgbench_duration
+
+END
+
+echo "$PG_OPTIONS" >> $datadir/postgresql.conf
+
+# start server for loading data
+$PGINSTBIN/pg_ctl -D $datadir -l $log_dir/load_logfile start -w
+
+echo -n "loading data.... "
+$PGINSTBIN/createuser postgres -s
+$PGINSTBIN/psql postgres -c "CHECKPOINT;"
+$PGINSTBIN/pgbench -i -s $pgbench_sf -q postgres -U postgres
+
+if grep -q 'Error*' $log_dir/load_logfile; then
+	echo "failed"
+else
+	echo "done"
+fi
+
+# stop server
+$PGINSTBIN/psql postgres -c "CREATE EXTENSION pg_prewarm;"
+$PGINSTBIN/psql postgres -c "CHECKPOINT;"
+$PGINSTBIN/pg_ctl -D $datadir -l $log_dir/load_logfile stop -w
+
+# create a backup of the data so that we don't need create the data for
+# every run.
+echo -n "creating data backup.... "
+rm -rf $bck_datadir
+mv $datadir $bck_datadir
+echo "done"
+
+for ((run = 1 ; run <= $pgbench_no_of_readings ; run++))
+do
+	echo "test run..... [${run}/${pgbench_no_of_readings}]"
+	echo "Run " ${run} "Start.." >> $resultfile_prefix.tmp
+
+	for threads in $pgbench_num_clients
+	do
+
+		# copy data from backup
+		echo -n "copying data directory for test.... "
+		cp -r $bck_datadir $datadir
+		mv $datadir/$wal_folder_name $wal_dir/$wal_folder_name
+		ln -s $wal_dir/$wal_folder_name $datadir/$wal_folder_name
+		echo "done"
+
+		# start server for test
+		$PGINSTBIN/pg_ctl -D $datadir -l $log_dir/pgbench_${run}_logfile start -w
+
+		# prewarm the server
+		$PGINSTBIN/psql postgres -c "SELECT pg_prewarm('pgbench_accounts');"
+		$PGINSTBIN/psql postgres -c "SELECT pg_prewarm('pgbench_accounts_pkey');"
+
+		$PGINSTBIN/psql postgres -c "CHECKPOINT;"
+
+		echo -n "running test for clients $threads.... "
+		$PGINSTBIN/pgbench -P 5 -c $threads -j $threads -T $pgbench_duration -M prepared postgres  >> $log_dir/pgbench_run_${run}.output
+
+		if grep -q 'Error*' $log_dir/pgbench_run_${run}.output; then
+			echo "failed"
+		else
+			echo "done"
+		fi
+
+		# stop server
+		$PGINSTBIN/pg_ctl -D $datadir -l $log_dir/pgbench_${run}_logfile stop -w -m immediate
+
+		grep 'clients: '${threads}'$' -A 6 $log_dir/pgbench_run_${run}.output >> $resultfile_prefix.tmp
+		echo "" >> $resultfile_prefix.tmp
+
+		mkdir $log_dir/${run}
+		mkdir $log_dir/${run}/${threads}
+		if [ $version -eq 9520 ] || [ $version -eq 9616 ]
+		then
+			mv $datadir/pg_log/* $log_dir/${run}/${threads}/
+		else
+			mv $datadir/log/* $log_dir/${run}/${threads}/
+		fi
+
+		#cleanup test dir
+		echo -n "removing data directory.... "
+		rm -rf $datadir
+		rm -rf $wal_dir/$wal_folder_name
+		echo "done"
+	done
+done
+
+# cleanup backup dir
+echo -n "cleaning up backup data.... "
+#rm -rf $bck_datadir
+echo "done"
+
+# save results
+echo -n "saving results.... "
+current_time=$(date "+%Y.%m.%d-%H.%M.%S")
+echo "done"
+mv $resultfile_prefix.tmp ${resultfile_prefix}_${version}.$current_time

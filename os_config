@@ -1,0 +1,42 @@
+#sysctl -w vm.nr_hugepages=52600
+#sysctl -w vm.swappiness=1
+#sysctl -w vm.dirty_expire_centisecs=1000
+#sysctl -w vm.dirty_writeback_centisecs=1000
+#sysctl -w vm.dirty_background_bytes=67108864
+#sysctl -w vm.dirty_ratio=20
+#bash -c "echo mq-deadline > /sys/block/nvme3n1/queue/scheduler"
+#blockdev --setra 8192 /dev/nvme3n1
+#bash -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled"
+#bash -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+#TPS 27023
+
+
+sysctl -w vm.nr_hugepages=52600
+sysctl -w vm.swappiness=1
+sysctl -w vm.max_map_count=3112960
+sysctl -w net.core.somaxconn=1024
+#sysctl -w vm.dirty_background_ratio=10
+#sysctl -w vm.dirty_ratio=30
+bash -c "echo deadline > /sys/block/sdc/queue/scheduler"
+blockdev --setra 8192 /dev/sdc
+bash -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled"
+bash -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+#TPS 27125
+
+
+#sysctl -w vm.nr_hugepages=52600
+#sysctl -w vm.swappiness=1
+#sysctl -w vm.max_map_count=3112960
+#sysctl -w net.core.somaxconn=1024
+#sysctl -w vm.dirty_expire_centisecs=100
+#sysctl -w vm.dirty_writeback_centisecs=200
+#sysctl -w vm.dirty_background_bytes=209715200
+#sysctl -w vm.dirty_ratio=40
+#bash -c "echo mq-deadline > /sys/block/nvme3n1/queue/scheduler"
+#blockdev --setra 8192 /dev/nvme3n1
+#bash -c "echo never > /sys/kernel/mm/transparent_hugepage/enabled"
+#bash -c "echo never > /sys/kernel/mm/transparent_hugepage/defrag"
+#TPS 25360 but long pause for last 60 seconds
+
+
+sudo chown kuntal.ghosh /var/run/postgresql
