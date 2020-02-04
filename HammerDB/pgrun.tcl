@@ -35,7 +35,7 @@ print dict
 vuset logtotemp 1
 loadscript
 puts "SEQUENCE STARTED"
-foreach z { 1 16 32 48 64 96 128 } {
+foreach z { 1 16 32 64 128 256 512 } {
 puts "$z VU TEST"
 vuset vu $z
 vucreate

@@ -11,10 +11,10 @@ resultfile_prefix=$current_dir/Results/hammerdb
 
 # hammerdb specific parameters
 hdb_no_of_readings=3
-hdb_pg_count_ware=800
-hdb_pg_num_vu=50
-hdb_pg_rampup=2
-hdb_pg_duration=25
+hdb_pg_count_ware=5
+hdb_pg_num_vu=4
+hdb_pg_rampup=1
+hdb_pg_duration=1
 hdb_pg_vacuum=true
 
 export LD_LIBRARY_PATH=$PGINST/lib/
